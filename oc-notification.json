@@ -1,0 +1,6 @@
+{
+  "desktop": true,
+  "tabIcon": true,
+  "delay": 5,
+  "focusMode": "tab"
+}

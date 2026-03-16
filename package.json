@@ -1,0 +1,30 @@
+{
+  "name": "opencode-focus-notifications",
+  "version": "0.1.0",
+  "description": "OpenCode plugin: macOS desktop notifications + terminal tab icons with focus-aware suppression",
+  "main": "index.js",
+  "type": "module",
+  "author": "Gaspare Vitta",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gasparevitta/opencode-focus-notifications.git"
+  },
+  "homepage": "https://github.com/gasparevitta/opencode-focus-notifications#readme",
+  "bugs": {
+    "url": "https://github.com/gasparevitta/opencode-focus-notifications/issues"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "notifications",
+    "macos",
+    "terminal",
+    "ghostty",
+    "focus-detection"
+  ],
+  "files": [
+    "index.js",
+    "oc-notification.json"
+  ]
+}
