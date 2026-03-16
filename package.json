@@ -8,11 +8,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/gasparevitta/opencode-focus-notifications.git"
+    "url": "git+https://github.com/gasparev/opencode-focus-notifications.git"
   },
-  "homepage": "https://github.com/gasparevitta/opencode-focus-notifications#readme",
+  "homepage": "https://github.com/gasparev/opencode-focus-notifications#readme",
   "bugs": {
-    "url": "https://github.com/gasparevitta/opencode-focus-notifications/issues"
+    "url": "https://github.com/gasparev/opencode-focus-notifications/issues"
   },
   "keywords": [
     "opencode",
