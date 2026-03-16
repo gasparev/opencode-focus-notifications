@@ -15,7 +15,7 @@ import { readFileSync, writeFileSync, openSync, closeSync, existsSync } from "fs
 import { join } from "path";
 
 // Load config from oc-notification.json (global config dir, project root, or .opencode/)
-function loadConfig(directory) {
+export function loadConfig(directory) {
   const defaults = { desktop: true, tabIcon: true, delay: 5, focusMode: "tab" };
   const candidates = [
     join(process.env.HOME ?? "", ".config", "opencode", "oc-notification.json"),
@@ -36,7 +36,7 @@ function loadConfig(directory) {
 }
 
 // Emoji icons per event type
-const ICONS = {
+export const ICONS = {
   "session.idle": "\u2705",
   "session.error": "\u274c",
   "permission.asked": "\ud83d\udd10",
@@ -139,11 +139,23 @@ function setTerminalTitle(sessionId, title) {
   }
 }
 
-export const NotificationPlugin = async ({ client, directory }) => {
-  const config = loadConfig(directory);
-  const DELAY_MS = (config.delay ?? 5) * 1000;
+// --- Core event handler logic (extracted for testability) ---
 
-  // focusMode: "none" | "app" | "tab"
+// Creates the event handler and scheduler with injectable dependencies.
+// `deps` allows tests to replace OS-bound functions with mocks.
+export function createEventHandler(config, deps) {
+  const {
+    notifyFn = notify,
+    setTabIconFn,
+    clearTabIconFn,
+    getSessionTitleFn,
+    isSessionTabFocusedFn = isSessionTabFocused,
+    getFrontmostAppFn = getFrontmostApp,
+    setTimeoutFn = setTimeout,
+    clearTimeoutFn = clearTimeout,
+  } = deps;
+
+  const DELAY_MS = (config.delay ?? 5) * 1000;
   const focusMode = config.focusMode ?? "tab";
 
   const pending = new Map(); // sessionId -> timeoutId
@@ -152,27 +164,25 @@ export const NotificationPlugin = async ({ client, directory }) => {
   const userMsgIds = new Map(); // sessionId -> last user messageID
   const iconActive = new Set(); // sessions that currently have a tab icon
 
-  // Fetch the session title from OpenCode's client API
-  async function getSessionTitle(sid) {
-    const session = await client.session
-      .get({ path: { id: sid } })
-      .catch(() => null);
-    return session?.data?.title ?? "OpenCode";
-  }
-
-  // Prepend emoji icon to tab title
   async function setTabIcon(sid, icon) {
     if (!config.tabIcon) return;
-    const title = await getSessionTitle(sid);
-    setTerminalTitle(sid, `${icon} ${title}`);
+    if (setTabIconFn) {
+      await setTabIconFn(sid, icon);
+    } else {
+      const title = await getSessionTitleFn(sid);
+      setTerminalTitle(sid, `${icon} ${title}`);
+    }
     iconActive.add(sid);
   }
 
-  // Restore tab title without emoji
   async function clearTabIcon(sid) {
     if (!iconActive.has(sid)) return;
-    const title = await getSessionTitle(sid);
-    setTerminalTitle(sid, title);
+    if (clearTabIconFn) {
+      await clearTabIconFn(sid);
+    } else {
+      const title = await getSessionTitleFn(sid);
+      setTerminalTitle(sid, title);
+    }
     iconActive.delete(sid);
   }
 
@@ -184,25 +194,22 @@ export const NotificationPlugin = async ({ client, directory }) => {
     if (icon) setTabIcon(sessionId, icon);
 
     if (config.desktop) {
-      const id = setTimeout(async () => {
+      const id = setTimeoutFn(async () => {
         // Focus mode: suppress desktop notification based on focus state
         if (focusMode === "app") {
-          // Suppress if ANY terminal emulator is the frontmost app
-          const app = getFrontmostApp();
+          const app = getFrontmostAppFn();
           if (app && TERMINAL_APPS.has(app)) {
             pending.delete(sessionId);
             return;
           }
         } else if (focusMode === "tab") {
-          // Suppress only if THIS session's tab is the active tab
-          const title = await getSessionTitle(sessionId);
-          if (isSessionTabFocused(title)) {
+          const title = await getSessionTitleFn(sessionId);
+          if (isSessionTabFocusedFn(title)) {
             pending.delete(sessionId);
             return;
           }
         }
-        // focusMode === "none" → always notify
-        notify(notifyTitle, message);
+        notifyFn(notifyTitle, message);
         pending.delete(sessionId);
       }, DELAY_MS);
       pending.set(sessionId, id);
@@ -212,109 +219,136 @@ export const NotificationPlugin = async ({ client, directory }) => {
   function cancelTimer(sessionId) {
     const id = pending.get(sessionId);
     if (id) {
-      clearTimeout(id);
+      clearTimeoutFn(id);
       pending.delete(sessionId);
     }
   }
 
-  return {
-    event: async ({ event }) => {
-      switch (event.type) {
-        case "message.updated": {
-          const info = event.properties.info ?? event.properties;
-          const role = info.role;
-          const sid = info.sessionID;
-          const msgId = info.id;
-          if (!sid) break;
+  async function handleEvent({ event }) {
+    switch (event.type) {
+      case "message.updated": {
+        const info = event.properties.info ?? event.properties;
+        const role = info.role;
+        const sid = info.sessionID;
+        const msgId = info.id;
+        if (!sid) break;
 
-          if (role === "assistant") {
-            assistantSeen.add(sid);
-            interrupted.delete(sid);
-          } else if (role === "user") {
-            // Only react to NEW user messages (new messageID), not re-updates
-            const prev = userMsgIds.get(sid);
-            if (msgId && msgId !== prev) {
-              userMsgIds.set(sid, msgId);
-              // New user message = new turn starting, reset state
-              assistantSeen.delete(sid);
-              interrupted.delete(sid);
-              cancelTimer(sid);
-              clearTabIcon(sid);
-            }
-          }
-          break;
-        }
-
-        case "session.idle": {
-          const sid = event.properties.sessionID;
-          if (!sid) break;
-          if (interrupted.has(sid)) {
-            interrupted.delete(sid);
+        if (role === "assistant") {
+          assistantSeen.add(sid);
+          interrupted.delete(sid);
+        } else if (role === "user") {
+          // Only react to NEW user messages (new messageID), not re-updates
+          const prev = userMsgIds.get(sid);
+          if (msgId && msgId !== prev) {
+            userMsgIds.set(sid, msgId);
             assistantSeen.delete(sid);
-            break;
-          }
-          if (!assistantSeen.has(sid)) break;
-
-          assistantSeen.delete(sid);
-          const title = await getSessionTitle(sid);
-          schedule(sid, "session.idle", "Response Ready", title);
-          break;
-        }
-
-        case "session.error": {
-          const sid = event.properties.sessionID;
-          if (!sid) break;
-          if (event.properties.error?.name === "MessageAbortedError") {
-            interrupted.add(sid);
+            interrupted.delete(sid);
             cancelTimer(sid);
             clearTabIcon(sid);
-            break;
           }
-          schedule(sid, "session.error", "Session Error", "An error occurred");
+        }
+        break;
+      }
+
+      case "session.idle": {
+        const sid = event.properties.sessionID;
+        if (!sid) break;
+        if (interrupted.has(sid)) {
+          interrupted.delete(sid);
+          assistantSeen.delete(sid);
           break;
         }
+        if (!assistantSeen.has(sid)) break;
 
-        case "permission.asked": {
-          const sid = event.properties.sessionID;
-          schedule(sid, "permission.asked", "Permission Needed", "OpenCode needs your approval");
-          break;
-        }
+        assistantSeen.delete(sid);
+        const title = await getSessionTitleFn(sid);
+        schedule(sid, "session.idle", "Response Ready", title);
+        break;
+      }
 
-        case "question.asked": {
-          const sid = event.properties.sessionID;
-          schedule(sid, "question.asked", "Question", "OpenCode has a question for you");
-          break;
-        }
-
-        case "permission.replied":
-        case "question.replied": {
-          const sid = event.properties.sessionID;
+      case "session.error": {
+        const sid = event.properties.sessionID;
+        if (!sid) break;
+        if (event.properties.error?.name === "MessageAbortedError") {
+          interrupted.add(sid);
           cancelTimer(sid);
           clearTabIcon(sid);
           break;
         }
-
-        case "command.executed": {
-          if (event.properties.name === "session.interrupt") {
-            const sid = event.properties.sessionID;
-            interrupted.add(sid);
-            cancelTimer(sid);
-            clearTabIcon(sid);
-          }
-          break;
-        }
-
-        // Don't cancel on session.status busy — it fires during normal response flow
+        schedule(sid, "session.error", "Session Error", "An error occurred");
+        break;
       }
-    },
 
-    destroy: () => {
-      for (const id of pending.values()) clearTimeout(id);
-      pending.clear();
-      assistantSeen.clear();
-      interrupted.clear();
-      userMsgIds.clear();
-      iconActive.clear();
-    },
+      case "permission.asked": {
+        const sid = event.properties.sessionID;
+        schedule(sid, "permission.asked", "Permission Needed", "OpenCode needs your approval");
+        break;
+      }
+
+      case "question.asked": {
+        const sid = event.properties.sessionID;
+        schedule(sid, "question.asked", "Question", "OpenCode has a question for you");
+        break;
+      }
+
+      case "permission.replied":
+      case "question.replied": {
+        const sid = event.properties.sessionID;
+        cancelTimer(sid);
+        clearTabIcon(sid);
+        break;
+      }
+
+      case "command.executed": {
+        if (event.properties.name === "session.interrupt") {
+          const sid = event.properties.sessionID;
+          interrupted.add(sid);
+          cancelTimer(sid);
+          clearTabIcon(sid);
+        }
+        break;
+      }
+
+      // Don't cancel on session.status busy — it fires during normal response flow
+    }
+  }
+
+  function destroy() {
+    for (const id of pending.values()) clearTimeoutFn(id);
+    pending.clear();
+    assistantSeen.clear();
+    interrupted.clear();
+    userMsgIds.clear();
+    iconActive.clear();
+  }
+
+  // Expose internal state for testing
+  return {
+    handleEvent,
+    destroy,
+    schedule,
+    cancelTimer,
+    // State accessors for assertions
+    _state: { pending, assistantSeen, interrupted, userMsgIds, iconActive },
+  };
+}
+
+// --- Main plugin export (wires real dependencies) ---
+
+export const NotificationPlugin = async ({ client, directory }) => {
+  const config = loadConfig(directory);
+
+  async function getSessionTitle(sid) {
+    const session = await client.session
+      .get({ path: { id: sid } })
+      .catch(() => null);
+    return session?.data?.title ?? "OpenCode";
+  }
+
+  const handler = createEventHandler(config, { getSessionTitleFn: getSessionTitle });
+
+  return {
+    event: handler.handleEvent,
+    destroy: handler.destroy,
   };
 };

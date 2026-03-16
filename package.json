@@ -13,5 +13,8 @@
   "homepage": "https://github.com/gasparev/opencode-focus-notifications#readme",
   "bugs": {
     "url": "https://github.com/gasparev/opencode-focus-notifications/issues"
+  },
+  "scripts": {
+    "test": "node --test test.js"
   }
 }
