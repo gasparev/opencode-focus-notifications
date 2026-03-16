@@ -13,18 +13,5 @@
   "homepage": "https://github.com/gasparev/opencode-focus-notifications#readme",
   "bugs": {
     "url": "https://github.com/gasparev/opencode-focus-notifications/issues"
-  },
-  "keywords": [
-    "opencode",
-    "opencode-plugin",
-    "notifications",
-    "macos",
-    "terminal",
-    "ghostty",
-    "focus-detection"
-  ],
-  "files": [
-    "index.js",
-    "oc-notification.json"
-  ]
+  }
 }

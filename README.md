@@ -24,23 +24,13 @@ Get notified when OpenCode finishes responding, asks a question, requests permis
 
 ## Install
 
-### Option A: npm plugin (recommended)
-
-Add to your `opencode.json`:
-
-```json
-{
-  "plugin": [
-    "opencode-focus-notifications@latest"
-  ]
-}
+```bash
+curl -fsSL https://raw.githubusercontent.com/gasparev/opencode-focus-notifications/main/install.sh | bash
 ```
 
-Restart OpenCode. The plugin will be auto-installed.
+This downloads `index.js` to `~/.config/opencode/plugins/notification.js`. Restart OpenCode to activate.
 
-### Option B: local plugin
-
-Copy `index.js` to `~/.config/opencode/plugins/notification.js`. Restart OpenCode.
+To update, run the same command again.
 
 ## Configuration
 
