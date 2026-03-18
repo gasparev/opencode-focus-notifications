@@ -6,6 +6,7 @@
 // {
 //   "desktop": true,    — enable/disable macOS desktop notifications
 //   "tabIcon": true,    — enable/disable emoji tab icons
+//   "sound": true,      — enable/disable notification sound
 //   "delay": 5,         — seconds to wait before desktop notification
 //   "focusMode": "tab"  — "none" = always notify, "app" = suppress if any
 //                          terminal focused, "tab" = suppress only if THIS tab focused
@@ -20,7 +21,7 @@ import { join } from "path";
 
 // Load config from oc-notification.json (global config dir, project root, or .opencode/)
 function loadConfig(directory) {
-  const defaults = { desktop: true, tabIcon: true, delay: 5, focusMode: "tab" };
+  const defaults = { desktop: true, tabIcon: true, sound: true, delay: 5, focusMode: "tab" };
   const candidates = [
     join(process.env.HOME ?? "", ".config", "opencode", "oc-notification.json"),
     join(directory ?? ".", "oc-notification.json"),
@@ -47,9 +48,10 @@ const ICONS = {
   "question.asked": "\u2753",
 };
 
-function notify(title, message) {
+function notify(title, message, { sound = true } = {}) {
   const escaped = (s) => String(s).replace(/[\\"]/g, "\\$&");
-  const script = `display notification "${escaped(message)}" with title "${escaped(title)}" sound name "Ping"`;
+  const soundClause = sound ? ' sound name "Ping"' : "";
+  const script = `display notification "${escaped(message)}" with title "${escaped(title)}"${soundClause}`;
   Bun.spawn(["osascript", "-e", script], {
     stdout: "ignore",
     stderr: "ignore",
@@ -161,6 +163,7 @@ function createEventHandler(config, deps) {
 
   const DELAY_MS = (config.delay ?? 5) * 1000;
   const focusMode = config.focusMode ?? "tab";
+  const soundEnabled = config.sound !== false; // default true
 
   const pending = new Map(); // sessionId -> timeoutId
   const assistantSeen = new Set(); // sessions where assistant responded
@@ -213,7 +216,7 @@ function createEventHandler(config, deps) {
             return;
           }
         }
-        notifyFn(notifyTitle, message);
+        notifyFn(notifyTitle, message, { sound: soundEnabled });
         pending.delete(sessionId);
       }, DELAY_MS);
       pending.set(sessionId, id);

@@ -28,7 +28,7 @@ function makeMocks() {
   return {
     calls,
     deps: {
-      notifyFn: (title, msg) => calls.notify.push({ title, msg }),
+      notifyFn: (title, msg, opts) => calls.notify.push({ title, msg, opts }),
       setTabIconFn: async (sid, icon) => calls.setTabIcon.push({ sid, icon }),
       clearTabIconFn: async (sid) => calls.clearTabIcon.push({ sid }),
       getSessionTitleFn: async (sid) => {
@@ -275,6 +275,43 @@ describe("Event state machine", () => {
 
       assert.equal(m.calls.setTabIcon.length, 0);
       assert.equal(m.calls.timeouts.size, 1);
+    });
+  });
+
+  describe("config: sound", () => {
+    it("passes sound: true by default", async () => {
+      const m = makeMocks();
+      const h = createEventHandler(makeConfig(), m.deps);
+
+      await h.handleEvent(msgEvent("assistant", "s1", "a1"));
+      await h.handleEvent(sessionEvent("session.idle", "s1"));
+      await m.flushTimeouts();
+
+      assert.equal(m.calls.notify.length, 1);
+      assert.deepEqual(m.calls.notify[0].opts, { sound: true });
+    });
+
+    it("passes sound: false when config.sound is false", async () => {
+      const m = makeMocks();
+      const h = createEventHandler(makeConfig({ sound: false }), m.deps);
+
+      await h.handleEvent(msgEvent("assistant", "s1", "a1"));
+      await h.handleEvent(sessionEvent("session.idle", "s1"));
+      await m.flushTimeouts();
+
+      assert.equal(m.calls.notify.length, 1);
+      assert.deepEqual(m.calls.notify[0].opts, { sound: false });
+    });
+
+    it("passes sound: true when config.sound is explicitly true", async () => {
+      const m = makeMocks();
+      const h = createEventHandler(makeConfig({ sound: true }), m.deps);
+
+      await h.handleEvent(sessionEvent("permission.asked", "s1"));
+      await m.flushTimeouts();
+
+      assert.equal(m.calls.notify.length, 1);
+      assert.deepEqual(m.calls.notify[0].opts, { sound: true });
     });
   });
 
