@@ -10,12 +10,16 @@
 //   "focusMode": "tab"  — "none" = always notify, "app" = suppress if any
 //                          terminal focused, "tab" = suppress only if THIS tab focused
 // }
+//
+// IMPORTANT: Only NotificationPlugin is exported from this file.
+// OpenCode's plugin loader calls every export as a plugin function — exporting
+// anything else (constants, helpers) breaks plugin loading entirely.
 
 import { readFileSync, writeFileSync, openSync, closeSync, existsSync } from "fs";
 import { join } from "path";
 
 // Load config from oc-notification.json (global config dir, project root, or .opencode/)
-export function loadConfig(directory) {
+function loadConfig(directory) {
   const defaults = { desktop: true, tabIcon: true, delay: 5, focusMode: "tab" };
   const candidates = [
     join(process.env.HOME ?? "", ".config", "opencode", "oc-notification.json"),
@@ -36,7 +40,7 @@ export function loadConfig(directory) {
 }
 
 // Emoji icons per event type
-export const ICONS = {
+const ICONS = {
   "session.idle": "\u2705",
   "session.error": "\u274c",
   "permission.asked": "\ud83d\udd10",
@@ -143,7 +147,7 @@ function setTerminalTitle(sessionId, title) {
 
 // Creates the event handler and scheduler with injectable dependencies.
 // `deps` allows tests to replace OS-bound functions with mocks.
-export function createEventHandler(config, deps) {
+function createEventHandler(config, deps) {
   const {
     notifyFn = notify,
     setTabIconFn,
@@ -352,3 +356,7 @@ export const NotificationPlugin = async ({ client, directory }) => {
     destroy: handler.destroy,
   };
 };
+
+// Expose internals for tests. These are properties on the exported function,
+// NOT separate exports, so the plugin loader won't try to call them.
+NotificationPlugin._test = { createEventHandler, ICONS };

@@ -5,7 +5,8 @@
 
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { createEventHandler, ICONS } from "./index.js";
+import { NotificationPlugin } from "./index.js";
+const { createEventHandler, ICONS } = NotificationPlugin._test;
 
 // --- Helpers ---
 
